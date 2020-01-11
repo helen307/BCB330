@@ -1,2 +1,2 @@
 # BCB330
-Journal and Notes
+[Journal and Notes](https://github.com/helen307/BCB330/wiki)
