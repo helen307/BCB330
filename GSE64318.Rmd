@@ -1,0 +1,195 @@
+---
+title: "GSE64318: prostate"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+---
+```{r setup}
+    knitr::opts_knit$set(root.dir = normalizePath("/Users/helending/Documents/BCB330/raw_data/prostate/GSE64318")) 
+```
+
+# Packages
+```{r}
+library(knitr)
+library(limma)
+library(ggplot2)
+```
+# Download GSE64318
+* Experiment: find differential expression from AA, EA prostate cancer patients
+```{r}
+URL <- "https://www.ebi.ac.uk/arrayexpress/files/E-GEOD-64318"
+SDRF.file <- "E-GEOD-64318.sdrf.txt"
+Data.file <- "E-GEOD-64318.raw.1.zip"
+if (! file.exists(SDRF.file)){
+  download.file(paste(URL,SDRF.file,sep="/"), SDRF.file)
+}
+if (! file.exists(Data.file)){
+  download.file(paste(URL,Data.file,sep="/"), Data.file)
+  unzip(Data.file)
+}
+```
+
+# Select only the normal samples
+* 32 samples selected from both AA+EA groups
+```{r}
+SDRF <- read.delim("E-GEOD-64318.sdrf.txt",check.names=FALSE,stringsAsFactors=FALSE)
+
+all_sample <- SDRF[,c("Array Data File","Characteristics [organism part]")]
+knitr::kable(all_sample[1:5,])
+norm_ind_EA <- which(SDRF$`Characteristics [organism part]` == "patient matched normal tissue from EA")
+norm_ind_AA <- which(SDRF$`Characteristics [organism part]` == "patient matched normal tissue from AA")
+```
+
+# Read Agilent files
+* Data Cleaning: Removed bright and dark corner positive controls
+```{r, results="hide", warning=FALSE}
+x <- limma::read.maimages(files=SDRF[c(norm_ind_EA, norm_ind_AA),
+                                     "Array Data File"], 
+                          source="agilent", 
+                          green.only=TRUE, 
+                          other.columns = "gIsWellAboveBG")
+dim(x) # 13737
+
+# exclude bright and dark corner
+remove <- grep(pattern="Corner", x$genes$SystematicName)
+length(remove) # 41 has brightCorner/darkCorner
+
+x <- x[-remove, ]
+nrow(x) # 13696
+
+# change colnames to sample names
+coln <- colnames(x)
+coln <- gsub("^([^_]*)_([^_]*).*","\\1", coln)
+colnames(x) <- coln
+```
+
+
+```{r}
+# Display the non-normalized file
+copy_x <- x
+copy_x <- data.frame(copy_x)
+knitr::kable(copy_x[1:10, 1:15])
+
+# Before background correction and normalization
+plotDensities(x, legend=FALSE)
+```
+
+# Normalize by quantile method
+### Background correct
+```{r, results="hide", warning=FALSE}
+# all the data without Corner probes
+y <- backgroundCorrect(x, method="normexp")
+```
+
+```{r}
+# Display the file after background correction
+copy_y <- y
+copy_y <- data.frame(copy_y)
+knitr::kable(copy_y[1:10, 1:15])
+```
+
+```{r, warning=FALSE}
+plotDensities(y, legend=FALSE)
+```
+
+### Normalize
+```{r, results="hide"}
+y <- normalizeBetweenArrays(y, method="quantile")
+plotDensities(y, legend=FALSE)
+```
+
+
+```{r}
+# Display the file after normalization
+y <- data.frame(y)
+knitr::kable(y[1:10, 1:15])
+
+# save normalized data
+write.table(y[1:15, 1:15], "normalized_prostate.csv")
+```
+
+# Select negative control group
+* Contain negative control and non-human miRNAs
+```{r, results="hide"}
+# exclude human
+human <- grep(pattern="hsa", y$SystematicName)
+length(human) # 11569
+
+# exclude positive controls
+pos_control <- which(y$ControlType == 1)
+length(pos_control) # 240
+
+# only non-human and neg control
+y_neg_ctrl <- y[-c(human, pos_control), ]
+rows <- nrow(y_neg_ctrl) # 1887
+cols <- ncol(y_neg_ctrl) # 32, 5 are non-numeric
+```
+
+
+
+# Define expression threshold
+### Find the n largest values and their position
+
+```{r, results="hide"}
+# top 1% 
+n <- floor(rows * (cols-5) * 0.01) # 509
+y_neg_ctrl <- as.matrix(y_neg_ctrl[,6:32])
+
+rownames(y_neg_ctrl) <- 1:nrow(y_neg_ctrl)
+ncol(y_neg_ctrl) # 27
+
+## Return n largest values and position for matrix m
+nlargest <- function(m, n) {
+  copy_m <- m
+  copy_m <- as.vector(copy_m)
+  res <- order(copy_m, decreasing=TRUE)[1:n]
+  pos <- arrayInd(res, dim(m), useNames = TRUE)
+  list(values = m[res],position = pos)
+}
+
+# inspect the top 1% values
+greatest_0.01 <- nlargest(y_neg_ctrl, n)
+selected_0.01 <- greatest_0.01$values
+```
+
+### Top 1% selection is biased!! 
+```{r}
+
+# inspect # of times data is selected from each sample
+table(greatest_0.01$position[,2])
+
+# Expected: 509 / 27 = 19 per sample
+# Biased choice!
+
+# the smallest is the threshold
+thres <- min(greatest_0.01$values) # 8.370152
+```
+
+# Define each miRNA expression
+```{r}
+# read in human mirna expression data
+# setwd("/Users/helending/Documents/BCB330/raw_data/prostate/GSE64318")
+# normalized_prostate <- read.table("normalized_prostate.csv")
+# View(normalized_prostate)
+# normalized_prostate <- normalized_prostate[,6:32]
+# copy_y <- normalized_prostate
+# 
+# # compare each expression value to thres
+# for(i in 1:nrow(copy_y)){
+#   for (j in 1:ncol(copy_y)){
+#     if (copy_y[i, j] >= thres){
+#       copy_y[i, j] <- 1
+#     } else{
+#       copy_y[i, j] <- 0
+#     }
+#   }
+# }
+# 
+# # sum the rows
+# copy_y <- cbind("SUM"=rowSums(copy_y), copy_y)
+# View(copy_y)
+# # 12396 mirna < 13
+# length(rownames(copy_y)[which(copy_y$SUM <3)])
+```
+
