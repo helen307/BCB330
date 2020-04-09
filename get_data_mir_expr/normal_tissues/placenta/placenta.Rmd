@@ -1,0 +1,188 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r setup}
+knitr::opts_knit$set(root.dir = normalizePath("/Users/helending/Documents/BCB330/code/normal_tissues/placenta"))
+```
+# Library
+```{r}
+library(knitr)
+library(limma)
+library(ggplot2)
+```
+
+# Download GSE28423
+* Experiment: find differential expression from AA, EA prostate cancer patients
+```{r, results="hide"}
+
+URL <- "https://www.ebi.ac.uk/arrayexpress/files/E-GEOD-29100"
+SDRF.file <- "E-GEOD-29100.sdrf.txt"
+Data.file <- "E-GEOD-29100.raw.1.zip"
+if (! file.exists(SDRF.file)){
+  download.file(paste(URL,SDRF.file,sep="/"), SDRF.file)
+}
+if (! file.exists(Data.file)){
+  download.file(paste(URL,Data.file,sep="/"), Data.file)
+  unzip(Data.file)
+}
+```
+
+# Select only the normal samples
+* 4 samples selected
+```{r}
+SDRF <- read.delim(SDRF.file,check.names=FALSE,stringsAsFactors=FALSE)
+norm_ind <- c(2:6)
+```
+# Read Agilent files
+* Data Cleaning: Removed bright and dark corner positive controls
+```{r, results="hide", warning=FALSE}
+read_data <- limma::read.maimages(files=SDRF[norm_ind, "Array Data File"], 
+                          source="agilent", 
+                          green.only=TRUE, 
+                          other.columns = "gIsWellAboveBG")
+```
+# Inspect the data
+## DO NOT RUN! 
+```{r}
+# ====================================== Plot 1 =======================================
+# only neg control
+read_data <- data.frame(read_data)
+# View(read_data)
+neg_ctrl_ind <- which(read_data$SystematicName == "NegativeControl")
+read_data <- cbind("LABEL" = 1:nrow(read_data), read_data)
+read_data$LABEL[neg_ctrl_ind] <- "negControl"
+neg_ctrl <- read_data[neg_ctrl_ind, ]
+rows <- nrow(neg_ctrl) # 288
+
+# the rest
+rest <- read_data[-neg_ctrl_ind,]
+read_data$LABEL[which(read_data$LABEL != "negControl")] <- "rest"
+
+rows <- nrow(rest) # 13449
+cols <- ncol(rest) # 10
+
+# Build plot: summarized
+# View(read_data)
+boxplot(read_data[, 10] ~ read_data$LABEL, ylab="Expression", xlab="labels")
+for (i in 11:ncol(read_data)){
+  boxplot(read_data[, i] ~ read_data$LABEL, ylab="Expression", xlab="labels", add=TRUE)
+}
+
+# ====================================== Plot 2 =======================================
+
+# negative control with other species
+
+# exclude human
+human <- grep(pattern="hsa", read_data$SystematicName)
+length(human) # 11569
+read_data <- cbind("LABEL_OTHERS"=1:nrow(read_data), read_data)
+read_data$LABEL_OTHERS[human] <- "human"
+
+# exclude positive controls
+pos_control <- which(read_data$ControlType == 1)
+length(pos_control) # 281
+
+# only non-human and neg control
+neg_ctrl_with_other_spec <- read_data[-c(human, pos_control), ]
+read_data$LABEL_OTHERS[which(read_data$LABEL_OTHERS != "human")] <- "rest (negControl+non-human)"
+
+boxplot(read_data[, 11] ~ read_data$LABEL_OTHERS, col=c("red", "blue"))
+for (i in 12:ncol(read_data)){
+  boxplot(read_data[, i] ~ read_data$LABEL_OTHERS, col=c("red", "blue"), add=TRUE)
+}
+```
+# find human miR
+```{r}
+human <- grep(pattern="hsa", read_data$genes$SystematicName)
+human_miR <- read_data[human,]
+nrow(human_miR) # 9800
+```
+# Remove corners
+```{r}
+# Remove Bright and Dark Corners
+remove <- grep(pattern="Corner", read_data$genes$SystematicName)
+length(remove) # 41 brightCorner/darkCorner to be removed
+read_data <- read_data[-remove, ]
+nrow(read_data) # 11992
+```
+
+# Normalize by quantile method
+## Background correction
+```{r}
+read_data_bc <- backgroundCorrect(read_data,method="minimum")
+plotDensities(read_data_bc, legend=FALSE)
+```
+## Normalize
+```{r}
+read_data_norm <- normalizeBetweenArrays(read_data_bc, method="quantile")
+plotDensities(read_data_norm, legend=FALSE)
+```
+# Pick negative control
+```{r}
+y_neg_ctrl <- read_data[which(read_data_norm$genes$SystematicName == "NegativeControl"),]
+y_neg_ctrl <- data.frame(y_neg_ctrl)
+
+
+rows <- nrow(y_neg_ctrl) # 288
+cols <- ncol(y_neg_ctrl) # 13
+```
+
+# Define expression threshold
+### Find the n largest values and their position
+```{r, results="hide"}
+# top 1% 
+n <- floor(rows * (cols-8) * 0.01) # 17
+y_neg_ctrl <- as.matrix(y_neg_ctrl[,9:cols])
+ncol(y_neg_ctrl) # 5
+
+## Return n largest values and position for matrix m
+nlargest <- function(m, n) {
+  copy_m <- m
+  copy_m <- as.vector(copy_m)
+  res <- order(copy_m, decreasing=TRUE)[1:n]
+  pos <- arrayInd(res, dim(m), useNames = TRUE)
+  list(values = m[res],position = pos)
+}
+# mean: 17/6=2.833333
+# inspect the top 1% values
+greatest_0.01 <- nlargest(y_neg_ctrl, n)
+selected_0.01 <- greatest_0.01$values
+table(greatest_0.01$position[,2])
+#  1  2  4  5 
+# 10  2  1  1 
+sd(greatest_0.01$position[,2]) # 1.277446
+thres <- min(greatest_0.01$values) # 79.5
+```
+
+# Define each miRNA expression
+```{r}
+# read in human mirna expression data\
+human_miR <- data.frame(human_miR)
+human_miR <- human_miR[,-8]
+copy_y <- human_miR[,8:ncol(human_miR)]
+
+# compare each expression value to thres
+for(i in 1:nrow(copy_y)){
+  for (j in 1:ncol(copy_y)){
+    if (copy_y[i, j] >= thres){
+      copy_y[i, j] <- 1
+    } else{
+      copy_y[i, j] <- 0
+    }
+  }
+}
+
+# sum the rows
+copy_y <- cbind("SUM"=rowSums(copy_y), copy_y)
+copy_y <- cbind("miR"=human_miR$SystematicName, copy_y)
+rownames(copy_y) <- 1:nrow(copy_y)
+if_ctrl_all_zero(human_miR_table=human_miR, copy_y=copy_y)
+```
+# save final
+```{r}
+unique_all <- process_human_miR(copy_y, norm_ind=norm_ind)
+save_known_and_novel(unique_all_table=unique_all, tissue_name="placenta")
+```
+
