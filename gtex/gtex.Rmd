@@ -1,0 +1,141 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r library, include=FALSE}
+library(biomaRt)
+library(tidyverse)
+library(ggplot2)
+```
+
+
+# read GTEx file
+```{r}
+zz <- CePa::read.gct("/Users/helending/Documents/BCB330/gtex/data/GTEx_Analysis_2017-06-05_v8_RNASeQCv1.1.9_gene_median_tpm.gct")
+gtex_data <- data.frame(zz)
+nrow(gtex_data) # 56200
+```
+
+# Identifier mapping for GTEx
+```{r, results='hide'}
+ensembl <- useMart("ensembl")
+ensembl = useDataset("hsapiens_gene_ensembl",mart=ensembl)
+
+ conversion_stash <- "gtex_id_conversion.rds"
+if(file.exists(conversion_stash)){
+  gtex_id_conversion <- readRDS(conversion_stash)
+} else {
+  gtex_id_conversion <- getBM(attributes = c("ensembl_gene_id_version","hgnc_symbol"),
+                            filters = "ensembl_gene_id_version",
+                            values = rownames(gtex_data),
+                            mart = ensembl)
+  saveRDS(gtex_id_conversion, conversion_stash)
+}
+
+# merge
+gtex_data_annot <- merge(gtex_id_conversion,gtex_data,by.x = 1, by.y = 0, all.y=TRUE)
+write.table(gtex_data_annot, "/Users/helending/Documents/BCB330/gtex/data/gtex_annotated.csv")
+
+# how many unmapped?
+unmapped_id <- which(is.na(gtex_data_annot$hgnc_symbol))
+length(unmapped_id) # 18901
+
+# how many duplicated gene symbols?
+gtex_data_annot_copy <- gtex_data_annot[-unmapped_id, ]
+gtex_data_annot_copy <- gtex_data_annot_copy[-which(gtex_data_annot_copy$hgnc_symbol == ""), ]                     
+nrow(gtex_data_annot_copy) # 20699
+nrow(unique(gtex_data_annot_copy)) # 20697
+```
+
+# filter GTEx as expressed / not expressed
+```{r}
+gtex_data_annot <- gtex_data_annot_copy
+
+threshold <- 5
+y <- gtex_data_annot[,3:ncol(gtex_data_annot)]
+for(i in 1:nrow(y)){
+  for (j in 1:ncol(y)){
+    if (y[i, j] >= threshold){
+      y[i, j] <- 1
+    } else{
+      y[i, j] <- 0
+    }
+  }
+}
+copy_y <- cbind("hgnc_symbol"=gtex_data_annot$hgnc_symbol, y)
+copy_y <- cbind("ensembl_gene_id"=gtex_data_annot$ensembl_gene_id, copy_y)
+write.table(copy_y, "/Users/helending/Documents/BCB330/gtex/data/filtered_gtex.csv")
+```
+
+
+# GTEx - corresponding tissues
+```{r}
+copy_y <- read.table("/Users/helending/Documents/BCB330/gtex/data/filtered_gtex.csv", stringsAsFactors = FALSE)
+copy_y <- copy_y[which(copy_y$hgnc_symbol %in% unique_mirdip), c(1, 2, 3, 35, 36, 39, 43, 44, 46, 52)]
+```
+
+## GTEx pie graph
+```{r}
+unknown_sum <- length(copy_y[copy_y == "?"])
+has_sum <- length(copy_y[copy_y == "1"])
+no_sum <- length(copy_y[copy_y == "0"])
+df_gtex <- data.frame(
+  group = c("?", "1", "0"),
+  value = c(unknown_sum, has_sum, no_sum))
+df_gtex %>%
+arrange(desc(value)) %>%
+mutate(prop = percent(value / sum(value))) -> mydf_getx
+
+ggplot(mydf_getx, aes(x = "", y = value, fill = fct_inorder(group))) +
+       geom_bar(width = 1, stat = "identity") +
+       coord_polar("y", start = 0) +
+       geom_label_repel(aes(label = prop), size=5, show.legend = F, nudge_x = 1) +
+       guides(fill = guide_legend(title = "Group"))
+
+rownames(copy_y) <- 1:nrow(copy_y) # 3386 genes
+```
+
+## GTEx statistics (number 1)
+```{r}
+# add a column
+copy_y <- cbind(copy_y, "num_tissue" = rowSums(copy_y == "1"))
+num_tissue_table <- data.frame(table(copy_y$num_tissue))
+colnames(num_tissue_table) <- c("num_tissues", "num_gene")
+
+num_tissue_table_percent_gtex <- num_tissue_table
+num_tissue_table_percent_gtex$per <- paste0(round(num_tissue_table_percent_gtex$num_gene / sum(num_tissue_table_percent_gtex$num_gene)*100, digits = 1), '%')
+rownames(num_tissue_table_percent_gtex) <- 1:nrow(num_tissue_table_percent_gtex)
+
+# graph 
+ggplot(num_tissue_table_percent_gtex, aes(x = num_tissues, y = num_gene))+
+  geom_text(aes(label = per), size = 3, hjust = 0.5, vjust = -1, position = "stack")+
+  geom_col(width = 0.8)
+```
+
+## GTEx statistics (number 2)
+```{r}
+# add a row
+copy_y <- rbind(copy_y, colSums(copy_y == "1"))
+copy_y[nrow(copy_y),]
+# graph table
+tissue_table <- data.frame("tissues"=colnames(copy_y)[2:ncol(copy_y)],
+                           "num_gene"=as.numeric(copy_y[nrow(copy_y),2:ncol(copy_y)]))
+
+tissue_table_percent_gtex <- tissue_table[c(2:9),]
+tissue_table_percent_gtex$per <- paste0(round(tissue_table_percent_gtex$num_gene / sum(tissue_table_percent_gtex$num_gene)*100, digits = 1), '%')
+rownames(tissue_table_percent_gtex) <- 1:nrow(tissue_table_percent_gtex)
+
+# graph 
+ggplot(tissue_table_percent_gtex, aes(x = tissues, y = num_gene))+
+  geom_text(aes(label = per), size = 2, hjust = 0.5, vjust = -0.9, position = "stack")+
+  geom_col(width = 0.6) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, size = 5.5))
+```
+
+
+
+
+
+
+
