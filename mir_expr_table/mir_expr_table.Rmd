@@ -1,0 +1,77 @@
+---
+title: "miRNA expression table"
+author: "Yining Ding"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: 3
+bibliography: iid.bib
+---
+
+```{r setup, echo=FALSE}
+  knitr::opts_knit$set(root.dir = normalizePath("/Users/helending/Documents/BCB330/mir_expr_table"))
+```
+
+```{r libraries,echo=FALSE}
+library(httr)
+library(miRNAmeConverter)
+library(dplyr)
+library(ggplot2)
+library(HGNChelper)
+library(knitr)
+library(kableExtra)
+```
+
+# Helper function
+* __mirDIP_filter_task_helper.R__ is a file that includes functionst to define expressivity according to user's request, and also combines all expression tables into one table with unique miRNA as row names.
+```{r}
+source("mirDIP_filter_task_helper.R")
+```
+# my expression tables
+* The list of files calls all the known miRNA files (15 files) previously saved, and create 4 default tables with confidence levels "Very High", "High", "Medium" and "Low".
+```{r}
+list_of_files <- list.files(path = "/Users/helending/Documents/BCB330/saved_expr_data/expr_data_known",
+                            recursive = TRUE,
+                            pattern = "final_known*",
+                            full.names = TRUE)
+
+source("mirDIP_filter_task_helper.R")
+new_tables_0.99 <- call_expressivity(list_of_files, 0.99)
+new_tables_0.95 <- call_expressivity(list_of_files, 0.95)
+new_tables_2_3 <- call_expressivity(list_of_files, 2/3)
+new_tables_1_3 <- call_expressivity(list_of_files, 1/3)
+```
+
+## Collapse all expr tables into one with different confidence levels
+* Combine all the tables for each confidence levels and write to tables accordingly and save in the __data__ folder. These run a long time, so I did not include the code, I have uploaded the files.
+```{r}
+# combined_all_expr_tables_0.99 <- combine_all_expr_tables(new_tables_0.99, list_of_files)
+# combined_all_expr_tables_0.95 <- combine_all_expr_tables(new_tables_0.95, list_of_files)
+# combined_all_expr_tables_2_3 <- combine_all_expr_tables(new_tables_2_3, list_of_files)
+# combined_all_expr_tables_1_3 <- combine_all_expr_tables(new_tables_1_3, list_of_files)
+# 
+# write.table(combined_all_expr_tables_0.99, "combined_all_expr_tables_0.99.csv")
+# write.table(combined_all_expr_tables_0.95, "combined_all_expr_tables_0.95.csv")
+# write.table(combined_all_expr_tables_2_3, "combined_all_expr_tables_2_3.csv")
+# write.table(combined_all_expr_tables_1_3, "combined_all_expr_tables_1_3.csv")
+```
+
+## 3 tasks implemented
+* __tasks_helper.R__ is a file that contains all three task helper functions. Here are some working examples. For the first example, since the list of miRNA is too long, I will only show the number of miRNAs.
+```{r}
+source("tasks_helper.R")
+results_one <- give_tissues_return_mir("kidney,heart", "Very High")
+
+kable(results_one[c(1, 3)], caption = "Function 1", format="html") %>%
+  kable_styling(bootstrap_options = c("stripe", "hover"))
+
+results_two <- give_mir_return_tissues("hsa-let-7a,hsa-let-7b", "Very High")
+kable(results_two, caption = "Function 2", format="html") %>%
+  kable_styling(bootstrap_options = c("stripe", "hover"))
+
+results_three <- give_tissue_mir_return_info("kidney,heart", "hsa-let-7a,hsa-let-7b", "Very High")
+kable(results_three, caption = "Function 3", format="html") %>%
+  kable_styling(bootstrap_options = c("stripe", "hover"))
+
+```
+
