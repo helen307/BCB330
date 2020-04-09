@@ -1,0 +1,57 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# Download dataset
+```{r}
+datafile <- "GSE59267_miRNA_reads.txt.gz"
+if (!file.exists(datafile)) {
+  datafile <- GEOquery::getGEOSuppFiles('GSE59267', makeDirectory = FALSE)
+}
+expr <- read.delim(datafile, stringsAsFactors = FALSE)
+expr <- expr[, c(1, 2, 4)]
+colnames(expr) <- as.character(expr[1,])
+expr <- expr[-1, ]
+colnames(expr)[1] <- "miR"
+expr <- expr[-nrow(expr), ]
+rownames(expr) <- 1:nrow(expr)
+```
+
+```{r}
+copy_y <- expr[2:ncol(expr)]
+
+# compare each expression value to thres
+for(i in 1:nrow(copy_y)){
+  for (j in 1:ncol(copy_y)){
+    if (copy_y[i, j] >= 5){
+      copy_y[i, j] <- 1
+    } else{
+      copy_y[i, j] <- 0
+    }
+  }
+}
+
+# sum the rows
+copy_y <- cbind("SUM"=rowSums(copy_y == "1"), copy_y)
+copy_y <- cbind("miR"=expr[,1], copy_y)
+rownames(copy_y) <- 1:nrow(copy_y)
+nrow(copy_y) # 1221
+```
+
+```{r}
+nc = MiRNANameConverter()
+known_miR <- checkMiRNAName(nc, as.character(copy_y$miR)) # all known miR
+length(known_miR) # 1221
+```
+
+```{r}
+unique_miR <- length(unique(copy_y$miR)) # all unique, save all
+copy_y <- cbind(copy_y[,1:2], "num_rep"=1)
+copy_y <- cbind(copy_y, "sample_num"=57)
+colnames(copy_y)[1] <- "miR"
+colnames(copy_y)[2] <- "testes"
+copy_y <- copy_y[,-3]
+write.table(copy_y, "/Users/helending/Documents/BCB330/mirDIP/expr_data_known/final_known_testes.csv")
+```
+
