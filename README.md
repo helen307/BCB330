@@ -19,7 +19,6 @@
   * mir_expr_table/__mir_expr_table.Rmd__: only examines the miRNA expression. It has some helper files: api.R (from mirDIP), mirDIP_task_helper.Rmd, and task_helper.R (to complete 3 functionalities for miRNA expression catalogue)
   * gtex/__gtex.Rmd__: compares miRNA and gtex gene expression
   * mir_expr_table/__iid.Rmd__: compares miRNA and IID gene expression
-  * Reference for this iid.Rmd report is stored in iid.bib
 * __mir_gene_table/__: 
   * __final_combined.Rmd__: combines the miRNA and IID gene expression data into one table. The resulting table is similar to the tissue-specific IID human gene-gene interaction table.
   * __final_shiny_app.Rmd__: contains tissue-specific miRNA-gene interaction table.
@@ -27,4 +26,5 @@
   * All the tables have the same column names: miRNA name, expressivity sum over all the samples, number of samples selected
 * __get_data_mir_expr/__: contains all the data collection step. An example file can be found in the heart/ folder, in html.
 * __images/__: stores images for the final report.
+* __Reference__: Did not keep the references in my journal. All references are stored in iid.bib and heart.bib for the html report.
   
