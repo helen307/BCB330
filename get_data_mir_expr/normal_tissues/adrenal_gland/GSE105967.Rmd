@@ -1,0 +1,18 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+setwd("/Users/helending/Documents/BCB330/code/normal_tissues/adrenal_gland")
+```
+
+```{r}
+# Download dataset
+datafile <- "GSE105967_RAW.tar"
+if (!file.exists(datafile)) {
+  datafile <- GEOquery::getGEOSuppFiles('GSE105337', makeDirectory = FALSE)
+}
+expr <- read.delim(datafile,header=TRUE,check.names=FALSE)
+colnames(expr)[1] <- "miR"
+```
