@@ -1,0 +1,83 @@
+---
+title: "R Notebook"
+output: 
+  html_notebook:
+    toc: true
+    toc_depth: 3
+---
+```{r setup}
+knitr::opts_knit$set(root.dir = normalizePath("/Users/helending/Documents/BCB330/code/normal_tissues/mammary_gland"))
+```
+# Library
+```{r}
+library(knitr)
+library(limma)
+library(ggplot2)
+```
+# Download GSE45666
+* Experiment: find differential expression from AA, EA prostate cancer patients
+```{r, results="hide"}
+
+URL <- "https://www.ebi.ac.uk/arrayexpress/files/E-GEOD-45666"
+SDRF.file <- "E-GEOD-45666.sdrf.txt"
+Data.file <- "E-GEOD-45666.raw.1.zip"
+if (! file.exists(SDRF.file)){
+  download.file(paste(URL,SDRF.file,sep="/"), SDRF.file)
+}
+if (! file.exists(Data.file)){
+  download.file(paste(URL,Data.file,sep="/"), Data.file)
+  unzip(Data.file)
+}
+```
+# Select only the normal samples
+* 4 samples selected
+```{r}
+SDRF <- read.delim(SDRF.file,check.names=FALSE,stringsAsFactors=FALSE)
+# View(SDRF)
+all_sample <- SDRF[,c("Array Data File","Characteristics [tissue type]")]
+norm_ind <- which(SDRF$`Characteristics [tissue type]` == "Adjacent Normal")
+```
+# Read data
+```{r}
+read_data <- read_data_by_limma(norm_ind)
+read_data <- data.frame(read_data)
+read_data <- read_data[,-c(1:4)]
+```
+
+# inspect plots
+```{r}
+plot_negctrl_vs_rest(read_data)
+plot_negctrl_plus_nonhuman_vs_rest(read_data)
+```
+# Human miR
+```{r}
+# find human miRNA
+human <- grep(pattern="hsa", read_data$SystematicName)
+human_miR <- read_data[human,]
+```
+
+# Data cleaning
+* Find # human miR, corner removal report, picking negative control report
+```{r}
+neg_control <- data_cleaning(read_data)
+```
+# define expression
+```{r}
+# threshold: 
+greatest_0.01 <- define_expression_threshold(y_neg_ctrl=neg_control, norm_ind=length(norm_ind))
+table(greatest_0.01$position[,2])
+# 1 2 4 5 
+# 3 1 1 4 
+
+# define 
+defined <- define_miRNA_expression(human_miR_table=human_miR)
+
+# make sure that all controls have expression value = 0
+if_ctrl_all_zero(human_miR_table=human_miR, copy_y=defined)
+```
+# save final
+```{r}
+unique_all <- process_human_miR(defined, norm_ind)
+save_known_and_novel(unique_all_table=unique_all, tissue_name="mammary.gland")
+```
+
