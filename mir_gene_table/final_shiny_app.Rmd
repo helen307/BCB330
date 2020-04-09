@@ -1,0 +1,76 @@
+--- 
+title: "Untitled" 
+author: "author" 
+date: "July 24, 2018" 
+output: html_document runtime: shiny
+---
+```{r setup}
+    knitr::opts_knit$set(root.dir = normalizePath("/Users/helending/Documents/BCB330/mir_gene_table"))
+```
+
+```{r}
+library(DT)
+library(shiny)
+library(miRBaseConverter)
+```
+
+```{r}
+# load full file
+final_table <- read.table("~/Documents/BCB330/mir_gene_table/final_table.csv", stringsAsFactors = FALSE)
+
+# load partial file
+tissue_names <- character()
+for (i in 1:length(new_tables_0.99)){
+  tissue_names[i] <- colnames(new_tables_0.99[[i]])[2]
+}
+final_table_fifteen <- final_table[, which(colnames(final_table) %in% tissue_names)]
+head(final_table_fifteen)
+final_table_fifteen <- cbind(final_table[,1:2], final_table_fifteen)
+
+# load all mir file
+miR_expr <- read.table("/Users/helending/Documents/BCB330/mir_expr_table/data/combined_all_expr_tables.csv")
+
+# load partial mir file
+miR_expr_fifteen <- miR_expr[, which(colnames(miR_expr) %in% tissue_names)]
+miR_expr_fifteen <- cbind(miR_expr$miR, miR_expr_fifteen)
+colnames(miR_expr_fifteen)[1] <- "miRNA"
+check_family <- checkMiRNAFamily(miR_expr_fifteen$miRNA)
+table(check_family$Family)
+```
+
+
+```{r}
+ui <- fluidPage(
+  
+  titlePanel("miRNA-Gene interaction data supported by experiments"),
+    mainPanel(
+      tabsetPanel(
+        id = 'dataset',
+        tabPanel("Combined All", DT::dataTableOutput("mytable1")),
+        tabPanel("Combined 15", DT::dataTableOutput("mytable2")),
+        tabPanel("miR All", DT::dataTableOutput("mytable3")),
+        tabPanel("miR 15", DT::dataTableOutput("mytable4"))
+        )
+      )
+    )
+
+
+server <- function(input, output, session) {
+  output$mytable1 <- DT::renderDataTable({
+    DT::datatable(final_table)
+  })
+  output$mytable2 <- DT::renderDataTable({
+    DT::datatable(final_table_fifteen)
+  })
+  output$mytable3 <- DT::renderDataTable({
+    DT::datatable(miR_expr)
+  })
+  output$mytable4 <- DT::renderDataTable({
+    DT::datatable(miR_expr_fifteen)
+  })
+  
+}
+
+shinyApp(ui, server)
+```
+

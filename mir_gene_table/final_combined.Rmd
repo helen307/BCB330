@@ -1,0 +1,236 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+## Process both miR and gene expression data
+* The goal here is to have miR names on the first column and have the gene names on the second column. To create a similar table as the human PPI from IID.
+```{r, results='hide', warning=FALSE}
+miR_expr <- read.table("/Users/helending/Documents/BCB330/mir_expr_table/data/combined_all_expr_tables.csv")
+gene_expr <- read.table("/Users/helending/Documents/BCB330/mir_expr_table/data/gene_interaction_dup.csv")
+for (i in 1:ncol(gene_expr)){
+  gene_expr[,i]<- (as.character(gene_expr[,i]))
+}
+gene_expr[gene_expr == "?"] <- "10"
+for (i in 2:ncol(gene_expr)){
+  gene_expr[,i]<- (as.numeric(gene_expr[,i]))
+}
+colnames(gene_expr)[1] <- "Gene"
+
+# query for their genes
+mirs <- paste(miR_expr$miR, collapse = ", ")
+length(which(as.character(mirDIP_genes$Gene.Symbol) %in% gene_expr$Gene)) # 472805
+length(gene_expr$Gene)
+length(as.character(mirDIP_genes$Gene.Symbol)) # 480650
+
+# genes not in IID
+`%notin%` <- Negate(`%in%`)
+not_in_iid <- unique(mirDIP_genes$Gene.Symbol[as.character(mirDIP_genes$Gene.Symbol) %notin% gene_expr$Gene]) # 672
+length(not_in_iid)
+IID_data <- read.delim("/Users/helending/Documents/BCB330/mir_expr_table/data/human_annotated_PPIs.txt", header = TRUE, sep = "\t")
+
+# construct a new table
+final_table <- data.frame(matrix(0, nrow=nrow(mirDIP_genes), ncol=ncol(IID_data)))
+colnames(final_table) <- colnames(IID_data)
+colnames(final_table)[1:2] <- c("miRNA", "Gene")
+final_table <- final_table[,-c(3, 4, 5, 6, 7, 8)]
+
+final_table$miRNA <- mirDIP_genes$MicroRNA
+final_table$Gene <- mirDIP_genes$Gene.Symbol
+
+for (i in 1:ncol(final_table)){
+  final_table[,i]<- as.character(final_table[,i])
+}
+final_table_copy <- final_table[,2:ncol(final_table)]
+
+# order iid to be the same order
+gene_expr <- gene_expr[order(match(gene_expr$Gene, final_table_copy$Gene)), ]
+new <- left_join(final_table_copy, gene_expr, by=c("Gene" ="Gene"))
+new <- new[, -c(2:246)]
+colnames(new)[2:ncol(new)] <- colnames(IID_data)[9:ncol(IID_data)]
+
+final_table_copy_mir <- final_table[,-2]
+miR_expr <- miR_expr[order(match(final_table_copy_mir$miRNA, miR_expr$miR)), ]
+colnames(miR_expr)[1] <- "miRNA"
+for (i in 1:ncol(miR_expr)){
+  miR_expr[,i]<- (as.character(miR_expr[,i]))
+}
+miR_expr[miR_expr == "?"] <- "10"
+for (i in 2:ncol(miR_expr)){
+  miR_expr[,i]<- (as.numeric(miR_expr[,i]))
+}
+
+new_mir <- left_join(final_table_copy_mir, miR_expr, by=c("miRNA" ="miRNA"))
+new_mir <- new_mir[, -c(2:246)]
+colnames(new)[2:ncol(new)] <- colnames(IID_data)[9:ncol(IID_data)]
+```
+
+
+## Combine the two
+```{r, results='hide'}
+new_mir_num <- miR_expr[,2:ncol(miR_expr)]
+new_num <- new[,2:ncol(new)]
+
+new_sum <- Reduce(`+`, lapply(list(new_mir_num, new_num),function(x) {x[is.na(x)] <-0;x}))
+
+new_sum <- cbind(new$Gene, new_sum)
+new_sum <- cbind(new_mir$miRNA, new_sum)
+colnames(new_sum)[1:2] <- c("miRNA", "Gene")
+```
+
+## Assignment
+After creating the final table, we assign values to them. Firsly, we know that if both are expressed, the assignment should be "1", "0" if neither are expressed. Secondly, if one is expressed, the other is not expressed, the interaction should be assigned a "0". If one of the expression is "?" we should assign a "?" to the pair interaction. In order to identify it easily, we assign 10 if the "?" is observed, and sum the two tables. Finally, we will assign the "0", "1", "?" back to them with the following rules: 
+* 0 or 1 or 10 -> 0
+* 2 -> 1
+* 11 or 20 -> ?
+```{r, results='hide'}
+# change 10 to 0
+new_sum_copy <- new_sum
+new_sum_copy <- new_sum_copy[, -c(1, 2)]
+
+new_sum_copy[new_sum_copy == 1] <- 0
+new_sum_copy[new_sum_copy == 10] <- 0
+
+new_sum_copy[new_sum_copy == 2] <- 1
+
+for (i in 1:ncol(new_sum_copy)){
+  new_sum_copy[,i]<- (as.character(new_sum_copy[,i]))
+}
+new_sum_copy[new_sum_copy == "11"] <- "?"
+new_sum_copy[new_sum_copy == "20"] <- "?"
+head(new_sum_copy)
+new_sum_copy[new_sum_copy == "1"]
+new_sum_copy <- cbind(new_sum$Gene, new_sum_copy)
+new_sum_copy <- cbind(new_sum$miRNA, new_sum_copy)
+colnames(new_sum_copy)[1:2] <- c("miRNA", "Gene")
+rownames(new_sum_copy) <- 1:nrow(new_sum_copy)
+write.table(new_sum_copy, "/Users/helending/Documents/BCB330/mir_gene_table/final_table.csv")
+```
+
+## Total overall analysis (all tissues) - pie chart
+* The general overview of the all the tissues shows us that most of the interactions are not annotated.
+```{r}
+final_table <- read.table("/Users/helending/Documents/BCB330/mir_gene_table/final_table.csv", stringsAsFactors = FALSE)
+unknown_sum <- length(final_table[final_table == "?"]) # 35984
+has_sum <- length(final_table[final_table == "1"]) # 7791
+no_sum <- length(final_table[final_table == "0"]) # 117715475
+df <- data.frame(
+  group = c("?", "1", "0"),
+  value = c(unknown_sum, has_sum, no_sum)
+  )
+
+ggplot(df, aes(x="", y=value, fill=group))+ 
+  geom_bar(width = 1, stat = "identity")+
+  coord_polar("y", start=0)
+```
+
+## Total overall analysis (15 tissues) - pie chart
+* The general overview of the 15 tissues shows us that there are a little part of the data annotated.
+```{r}
+final_table <- read.table("/Users/helending/Documents/BCB330/mir_gene_table/final_table.csv", stringsAsFactors = FALSE)
+
+# which tissues do I have information in - 15
+tissue_names <- character()
+for (i in 1:length(new_tables_0.99)){
+  tissue_names[i] <- colnames(new_tables_0.99[[i]])[2]
+}
+
+final_table_copy <- final_table[, which(colnames(final_table) %in% tissue_names)]
+
+unknown_sum <- length(final_table_copy[final_table_copy == "?"]) # 35984
+has_sum <- length(final_table_copy[final_table_copy == "1"]) # 7791
+no_sum <- length(final_table_copy[final_table_copy == "0"]) # 7165975
+
+df_final <- data.frame(
+  group = c("?", "1", "0"),
+  value = c(unknown_sum, has_sum, no_sum)
+  )
+
+df_final %>%
+arrange(desc(value)) %>%
+mutate(prop = percent(value / sum(value))) -> mydf_final
+
+ggplot(mydf_final, aes(x = "", y = value, fill = fct_inorder(group))) +
+       geom_bar(width = 1, stat = "identity") +
+       coord_polar("y", start = 0) +
+       geom_label_repel(aes(label = prop), size=5, show.legend = F, nudge_x = 1) +
+       guides(fill = guide_legend(title = "group"))
+```
+
+
+
+## Analysis of miRNA-gene interactions
+```{r}
+final_table <- read.table("/Users/helending/Documents/BCB330/mir_gene_table/final_table.csv", stringsAsFactors = FALSE)
+
+# which tissues do I have information in - 15
+tissue_names <- character()
+for (i in 1:length(new_tables_0.99)){
+  tissue_names[i] <- colnames(new_tables_0.99[[i]])[2]
+}
+
+final_table_copy <- final_table[,which(colnames(final_table) %in% tissue_names)]
+```
+
+### miRNA-gene interaction analysis (number 1)
+```{r}
+# add a column
+final_table_copy_col <- cbind(final_table_copy, 
+                              "num_tissue" = rowSums(final_table_copy == "1"), 
+                              "num_unknown" = rowSums(final_table_copy == "?"), 
+                              "num_zero" = rowSums(final_table_copy == "0"))
+
+num_tissue_table <- data.frame(table(final_table_copy_col$num_tissue))
+colnames(num_tissue_table) <- c("num_tissues", "num")
+num_tissue_table$type <- "interaction"
+
+num_unknown_table <- data.frame(table(final_table_copy_col$num_unknown))
+colnames(num_unknown_table) <- c("num_tissues", "num")
+num_unknown_table$type <- "unknown"
+
+num_zero_table <- data.frame(table(final_table_copy_col$num_zero))
+colnames(num_zero_table) <- c("num_tissues", "num")
+num_zero_table$type <- "zero"
+
+# combine the three tables
+num_two_table <- rbind(num_unknown_table, num_tissue_table)
+num_three_table <- rbind(num_two_table, num_zero_table)
+
+# so many 0s, do not consider them
+num_three_table <- num_three_table[-which(num_three_table$num_tissues == 0), ]
+num_three_table <- num_three_table[-nrow(num_three_table), ]
+
+# graph
+ggplot(num_three_table, aes(num_tissues, num, fill = type)) + 
+  geom_bar(position="dodge", stat="identity") + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, size = 10))
+```
+
+### miRNA-gene interaction analysis (number 2)
+```{r}
+# ==== add a row ====
+final_table_copy_row <- rbind(final_table_copy, 
+                              colSums(final_table_copy == "1"), 
+                              colSums(final_table_copy == "?"), 
+                              colSums(final_table_copy == "0"))
+# graph table
+tissue_table <- data.frame("tissues"=colnames(final_table_copy_row)[1:ncol(final_table_copy_row)],
+                           "num"=as.numeric(final_table_copy_row[nrow(final_table_copy_row)-2,]), 
+                           "type"= "num_pair")
+
+tissue_unknown_table <- data.frame("tissues"=colnames(final_table_copy_row)[1:ncol(final_table_copy_row)],
+                           "num"=as.numeric(final_table_copy_row[nrow(final_table_copy_row)-1,]), 
+                           "type"= "num_unknown")
+
+tissue_zero_table <- data.frame("tissues"=colnames(final_table_copy_row)[1:ncol(final_table_copy_row)],
+                           "num"=as.numeric(final_table_copy_row[nrow(final_table_copy_row), ]), 
+                           "type"= "num_zero")
+
+tissue_two_table <- rbind(tissue_unknown_table, tissue_table)
+tissue_three_table <- rbind(tissue_two_table, tissue_zero_table)
+
+# graph
+ggplot(tissue_two_table, aes(tissues, num, fill = type)) + 
+  geom_bar(position="dodge", stat="identity") + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, size = 10))
+```
