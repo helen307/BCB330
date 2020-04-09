@@ -2,7 +2,7 @@
 [Journal and Notes](https://github.com/helen307/BCB330/wiki)<br/>
 # Workflow
 [Summarized Report](https://github.com/helen307/BCB330/wiki/final_report)<br/>
-# Reports generated from the project:
+# Reports
 1. [Data collection](https://htmlpreview.github.io/?https://github.com/helen307/BCB330/blob/master/get_data_mir_expr/normal_tissues/heart/heart.nb.html)<br/>
 * This is an example using tissue - heart.
 
