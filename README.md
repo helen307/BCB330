@@ -1,4 +1,4 @@
-# BCB330
+# BCB330 Self Journal
 [Journal and Notes](https://github.com/helen307/BCB330/wiki)<br/>
 # Workflow
 [Summarized Report](https://github.com/helen307/BCB330/wiki/final_report)<br/>
